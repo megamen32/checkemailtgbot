@@ -1,15 +1,16 @@
 import asyncio
+import imaplib
 import logging
 import re
 import traceback
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ContentType
 from aiogram.utils import executor
 
 # Настройка бота
-from imap import is_email_valid
+from imap import is_email_valid, EmailException
 from private_config import API_TOKEN
 
 bot = Bot(token=API_TOKEN)
@@ -41,7 +42,7 @@ file_lock = asyncio.Lock()
 
 cancel_events= {}
 def is_possible_password(password):
-    if not 6 <= len(password) <= 30:  # Обычно пароли длиной от 6 до 20 символов
+    if not 4 <= len(password) <= 30:  # Обычно пароли длиной от 6 до 20 символов
         return False
     if not re.search(r"[A-Za-z]", password):  # Должна быть хотя бы одна буква
         return False
@@ -73,7 +74,7 @@ async def handle_lines(credentials, message,cancel_event:asyncio.Event=None):
     loop = asyncio.get_running_loop()
     try:
 
-        with ThreadPoolExecutor() as executor:
+        with ProcessPoolExecutor() as executor:
             tasks=[]
             for cred in credentials:
                 if cancel_event:
@@ -88,7 +89,7 @@ async def handle_lines(credentials, message,cancel_event:asyncio.Event=None):
 
 
 async def check_and_answer(cred, executor, loop, message):
-    parts = re.split(r'[ :;]+', cred)
+    parts = re.split(r'[ :;|]+', cred)
     email = parts[0]
     passwords = parts[1:]
     errors = []
@@ -98,7 +99,7 @@ async def check_and_answer(cred, executor, loop, message):
             errors.append(f'Password format invalid for {password}.')
             continue
         try:
-            is_valid = await loop.run_in_executor(executor, is_email_valid, email, password)
+            is_valid,error_text = await loop.run_in_executor(executor, is_email_valid, email, password)
             if is_valid:
                 credential_added = await add_unique_credentials(email, password)
                 valid_found = True
@@ -107,8 +108,12 @@ async def check_and_answer(cred, executor, loop, message):
                     , parse_mode='HTML')
 
                 break
-        except Exception as e:  # Используем Exception для перехвата всех видов ошибок
-            errors.append(f'Error with password <code>{password}</code>: <code>{str(e)}</code>')
+            else:
+                errors.append(f'Error with password <code>{password}</code>   \n <code>{str(error_text)}</code>')
+        except (EmailException,imaplib.IMAP4) as e:  # Используем Exception для перехвата всех видов ошибок
+            errors.append(f'Error with password <code>{password}</code>   \n <code>{str(e)}</code>')
+        except:
+            errors.append(f'Program not working correctly {traceback.format_exc(3,False)}')
     if not valid_found:
         error_text = '\n'.join(errors)
         await message.reply((f'No valid credentials found for {email}. Errors:\n{error_text}')[:4096], parse_mode='HTML')
@@ -139,6 +144,6 @@ async def handle_document(message: types.Message):
     await handle_lines(credentials, message,cancel_event)
 
 if __name__ == '__main__':
-    logging.basicConfig(level='DEBUG')
+    logging.basicConfig(level='INFO')
     # Запуск бота
     executor.start_polling(dp)

@@ -11,7 +11,7 @@ from private_config import SERVER_URL, AUTH
 
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
-REDIS_DB = 0
+REDIS_DB = 5
 
 # Подключение к Redis
 redis_conn = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
@@ -56,6 +56,7 @@ def get_proxy():
             return proxy
     except:
         traceback.print_exc()
+        return None
 
 
 if __name__=='__main__':

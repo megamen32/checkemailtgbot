@@ -65,16 +65,19 @@ def is_email_valid(email, password):
     with use_proxy(proxy):
         mail = get_imap_server(email)
         if not mail:
-            return False
+            return False,'cant get imap server for domain, perhaps proxy is not working?'
 
-
-        mail.login(email, password)
+        try:
+            mail.login(email, password)
+        except Exception as e:
+            logging.error(f'{traceback.format_exc()}     cant login into imap ')
+            return False,str(e)
         try:
             mail.logout()
         except:
             traceback.print_exc()
 
-        return True
+        return True,''
 
 
 import socket
