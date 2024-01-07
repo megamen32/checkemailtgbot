@@ -8,7 +8,7 @@ from email import message_from_bytes
 
 import socks
 
-class EmailException(Exception):pass
+class EmailException(BaseException):pass
 from get_browser import get_proxy #возвращает прокси формата адресс:порт
 
 

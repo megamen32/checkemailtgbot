@@ -37,7 +37,7 @@ def get_proxy():
                             proxy_list.append({'proxy':pr})
                 else:
                     for i in range(2):
-                        t = requests.get(f'{SERVER_URL}/proxy/', params={'count': 50, 'priority': i == 0}, auth=AUTH, timeout=15)
+                        t = requests.get(f'{SERVER_URL}/proxy/', params={'count': 50, 'priority': i == 0}, auth=AUTH, timeout=60)
                         if t.status_code == 500:
                             break
                         try:

